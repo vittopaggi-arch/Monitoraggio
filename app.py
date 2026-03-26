@@ -2,93 +2,123 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# --- 1. IMPOSTAZIONI PAGINA ---
+# --- 1. CONFIGURAZIONE PAGINA (Layout Largo e Titolo) ---
 st.set_page_config(page_title="Monitoraggio Cetacei PRO", layout="wide", page_icon="🐋")
 
-# --- 2. CARICAMENTO DATI ---
+# --- 2. HEADER E TITOLO ---
+st.title("🛰️ Sistema di Monitoraggio Geografico Cetacei")
+st.markdown("Visualizzazione professionale degli avvistamenti basata sui dati Excel.")
+
+# --- 3. CARICAMENTO DATI ---
+# Nome del tuo file Excel (assicurati che sia esattamente questo nel tuo repository)
 NOME_FILE = "Avvistamenti.xlsx"
 
 @st.cache_data
 def load_data():
     try:
+        # Carichiamo l'Excel
         df = pd.read_excel(NOME_FILE)
+        
+        # Puliamo i nomi delle colonne (togliamo spazi vuoti accidentali)
         df.columns = df.columns.str.strip()
-        # Pulizia coordinate: trasforma in numeri e toglie righe vuote
-        for col in ['lat', 'lon', 'latitudine', 'longitudine', 'Lat', 'Lon']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
         
-        # Identificazione automatica colonne lat/lon
-        c_lat = next((c for c in df.columns if c.lower() in ['lat', 'latitudine']), None)
-        c_lon = next((c for c in df.columns if c.lower() in ['lon', 'longitudine']), None)
+        # --- PULIZIA COORDINATE ---
+        # Cerchiamo colonne lat/lon standard (lat, lon, Lat, Lon, lat, lon)
+        c_lat = next((c for c in df.columns if c.lower() == 'lat'), None)
+        c_lon = next((c for c in df.columns if c.lower() == 'lon'), None)
         
-        return df.dropna(subset=[c_lat, c_lon]), c_lat, c_lon
+        # Se non troviamo lat/lon, proviamo lat, lon
+        if not c_lat or not c_lon:
+            c_lat = next((c for c in df.columns if c.lower() == 'lat'), None)
+            c_lon = next((c for c in df.columns if c.lower() == 'lon'), None)
+            
+        # Se non troviamo nemmeno quelli, proviamo lat, lon
+        if not c_lat or not c_lon:
+            c_lat = next((c for c in df.columns if c.lower() == 'lat'), None)
+            c_lon = next((c for c in df.columns if c.lower() == 'lon'), None)
+        
+        # Se troviamo le colonne, assicuriamoci che siano numeri puliti
+        if c_lat and c_lon:
+            df[c_lat] = pd.to_numeric(df[c_lat], errors='coerce')
+            df[c_lon] = pd.to_numeric(df[c_lon], errors='coerce')
+            # Rimuoviamo righe senza coordinate valide
+            df = df.dropna(subset=[c_lat, c_lon])
+            return df, c_lat, c_lon
+        
+        return None, None, None
     except Exception as e:
-        st.error(f"Errore caricamento: {e}")
+        st.error(f"Errore critico nel caricamento: {e}")
         return None, None, None
 
 df, lat_col, lon_col = load_data()
 
-if df is not None:
-    # --- 3. SIDEBAR (FILTRI) ---
-    st.sidebar.header("📊 Pannello di Controllo")
-    tipo_visualizzazione = st.sidebar.radio("Stile Mappa:", ["Punti Classici", "Heatmap (Densità)"])
+# --- 4. VERIFICA E VISUALIZZAZIONE MAPPA ---
+if df is not None and lat_col and lon_col:
     
-    # Filtro Specie
-    col_specie = next((c for c in df.columns if c.lower() in ['specie', 'specie avvistata']), 'specie')
-    specie_unid = df[col_specie].unique()
-    sel_specie = st.sidebar.multiselect("Filtra per Specie:", specie_unid, default=specie_unid)
+    # Cerchiamo la colonna Specie per i colori
+    c_specie = next((c for c in df.columns if c.lower() in ['specie', 'specie avvistata']), None)
     
-    # Applicazione filtri
-    df_f = df[df[col_specie].isin(sel_specie)]
-
-    # --- 4. HEADER E KPI ---
-    st.title("🛰️ Dashboard Scientifica Cetacei")
-    st.markdown("---")
-    
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Punti Rilevati", len(df_f))
-    k2.metric("Esemplari Totali", int(df_f['n_esemplari'].sum()) if 'n_esemplari' in df_f.columns else "N/D")
-    k3.metric("Temp. Media", f"{df_f['temperatura_acqua'].mean():.1f} °C" if 'temperatura_acqua' in df_f.columns else "N/D")
-    k4.metric("Profondità Max", f"{int(df_f['profondita_mare'].max())} m" if 'profondita_mare' in df_f.columns else "N/D")
-
-    # --- 5. MAPPA PROFESSIONALE ---
-    st.subheader("📍 Analisi Geografica e Hot-Spots")
-    
-    if tipo_visualizzazione == "Punti Classici":
-        fig = px.scatter_mapbox(df_f, lat=lat_col, lon=lon_col, color=col_specie, 
-                                size="n_esemplari" if "n_esemplari" in df_f.columns else None,
-                                hover_name=col_specie, zoom=5, height=700,
-                                mapbox_style="stamen-terrain")
+    # --- FILTRO LATERALE ---
+    st.sidebar.header("Filtra Specie")
+    if c_specie:
+        tutte_le_specie = df[c_specie].unique()
+        specie_scelte = st.sidebar.multiselect("Seleziona Specie", tutte_le_specie, default=tutte_le_specie)
+        df_f = df[df[c_specie].isin(specie_scelte)]
     else:
-        # Heatmap (Mappa di Calore)
-        fig = px.density_mapbox(df_f, lat=lat_col, lon=lon_col, z="n_esemplari" if "n_esemplari" in df_f.columns else None,
-                                radius=25, zoom=5, height=700,
-                                mapbox_style="stamen-terrain",
-                                color_continuous_scale=px.colors.sequential.YlOrRd)
+        df_f = df
 
-    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-    st.plotly_chart(fig, use_container_width=True)
-
-    # --- 6. GRAFICI SCIENTIFICI ---
-    c1, c2 = st.columns(2)
+    # --- MAPPA PROFESSIONALE (Puntini Visibili!) ---
+    st.subheader("📍 Mappa Geografica degli Avvistamenti")
+    st.markdown("Usa il mouse per navigare, fare zoom e vedere i dettagli.")
     
-    with c1:
-        st.subheader("📈 Distribuzione Popolazione")
-        fig_bar = px.bar(df_f, x=col_specie, y="n_esemplari" if "n_esemplari" in df_f.columns else None, 
-                         color=col_specie, barmode="group", template="plotly_white")
-        st.plotly_chart(fig_bar, use_container_width=True)
-        
-    with c2:
-        st.subheader("🌡️ Correlazione Ambientale")
+    # Creiamo la mappa a punti (scatter) con stile professionale
+    fig_map = px.scatter_mapbox(
+        df_f, 
+        lat=lat_col, 
+        lon=lon_col, 
+        color=c_specie if c_specie else None, # Colore diverso per specie
+        size="n_esemplari" if "n_esemplari" in df_f.columns else None, # Dimensione del punto basata sul numero esemplari
+        hover_name=c_specie if c_specie else None, # Nome al passaggio del mouse
+        hover_data=list(df_f.columns), # Altri dati al passaggio del mouse
+        zoom=5, # Zoom iniziale
+        height=700, # Altezza della mappa
+        mapbox_style="stamen-terrain", # Stile professionale (mostra coste e rilievi)
+        color_discrete_sequence=px.colors.qualitative.Prism # Scala colori professionale
+    )
+    
+    # Rimuoviamo i margini bianchi per occupare tutto lo spazio
+    fig_map.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+    
+    # Mostriamo la mappa
+    st.plotly_chart(fig_map, use_container_width=True)
+
+    # --- ANALISI AGGIUNTIVA ---
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📊 Avvistamenti per Specie")
+        if c_specie and 'n_esemplari' in df_f.columns:
+            fig_bar = px.bar(df_f, x=c_specie, y='n_esemplari', color=c_specie, barmode='group')
+            st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.info("Aggiungi colonne 'specie' e 'n_esemplari' per questo grafico.")
+            
+    with col2:
+        st.subheader("🌡️ Profilo Ambientale")
         if 'temperatura_acqua' in df_f.columns and 'profondita_mare' in df_f.columns:
-            fig_scat = px.scatter(df_f, x="temperatura_acqua", y="profondita_mare", color=col_specie, size_max=20)
-            fig_scat.update_yaxes(autorange="reversed") # Mare verso il basso
-            st.plotly_chart(fig_scat, use_container_width=True)
+            fig_env = px.scatter(df_f, x="temperatura_acqua", y="profondita_mare", color=c_specie if c_specie else None)
+            fig_env.update_yaxes(autorange="reversed") # Mare verso il basso
+            st.plotly_chart(fig_env, use_container_width=True)
         else:
             st.info("Aggiungi colonne 'temperatura_acqua' e 'profondita_mare' per questo grafico.")
 
-    # --- 7. DATABASE ---
-    with st.expander("📂 Esplora Database Analitico"):
+    # --- DATABASE ---
+    with st.expander("Vedi Database completo"):
         st.dataframe(df_f, use_container_width=True)
-        st.download_button("📥 Scarica Report CSV", df_f.to_csv(index=False).encode('utf-8'), "dati.csv", "text/csv")
+
+else:
+    st.error("❌ Mappa non disponibile.")
+    if not df is None:
+        st.warning("⚠️ Non riesco a trovare le colonne delle coordinate. Assicurati che nel tuo Excel si chiamino esattamente `lat` e `lon` (o `lat`, `lon`).")
+        st.write("Le colonne che ho trovato nel tuo file sono:", list(df.columns) if not df is None else [])
+    else:
+        st.info("Verifica che il file 'Avvistamenti.xlsx' sia stato caricato correttamente su GitHub.")
