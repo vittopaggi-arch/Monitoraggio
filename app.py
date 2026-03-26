@@ -2,125 +2,120 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
 
 # --- 1. CONFIGURAZIONE SISTEMA ---
-st.set_page_config(page_title="GORDAZZONI PRIVATE ACCESS", layout="wide", page_icon="🔐")
+st.set_page_config(page_title="GORDAZZONI MISSION CONTROL", layout="wide", page_icon="🔐")
 
-# PASSWORD DI ACCESSO (Puoi cambiarla qui)
 PASSWORD_ISTITUTO = "Gordazzo2026"
 
-# --- 2. INTERFACCIA DI SICUREZZA (LOGIN) ---
+# --- 2. GESTIONE AUTENTICAZIONE ---
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
-def check_password():
-    if st.session_state["password_input"] == PASSWORD_ISTITUTO:
+def login():
+    if st.session_state["pwd_input"] == PASSWORD_ISTITUTO:
         st.session_state["authenticated"] = True
-        st.success("✅ ACCESSO AUTORIZZATO. Caricamento sistemi...")
     else:
-        st.error("❌ CHIAVE ERRATA. Accesso negato.")
+        st.error("❌ CHIAVE ERRATA.")
 
 if not st.session_state["authenticated"]:
-    st.title("🔐 GORDAZZONI INSTITUTE | SECURE GATEWAY")
-    st.markdown("---")
-    col_lock, col_input = st.columns([1, 2])
-    with col_lock:
-        st.image("https://cdn-icons-png.flaticon.com/512/2592/2592223.png", width=200)
-    with col_input:
-        st.subheader("Autenticazione Richiesta")
-        st.text_input("Inserire Security Token per decriptare i dati:", type="password", key="password_input", on_change=check_password)
-        st.info("I dati contenuti in questo portale sono protetti da embargo scientifico NASA-OS.")
-    st.stop() # Blocca tutto il resto se non autenticato
+    st.title("🔐 GORDAZZONI INSTITUTE | GATEWAY")
+    st.text_input("Inserire Security Token:", type="password", key="pwd_input", on_change=login)
+    st.stop()
 
-# --- 3. ESTETICA DARK SCIENTIFIC (DOPO IL LOGIN) ---
+# --- 3. ESTETICA ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
-    .main { background-color: #050a14; color: #e0e0e0; }
-    .stMetric { 
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-        padding: 20px; border-radius: 15px; border: 1px solid #38bdf8;
-    }
-    h1 { font-family: 'Orbitron', sans-serif; color: #38bdf8; text-transform: uppercase; letter-spacing: 3px; }
+    .main { background-color: #050a14; }
+    h1 { font-family: 'Orbitron', sans-serif; color: #38bdf8; text-transform: uppercase; }
+    .stMetric { background: #0f172a; border: 1px solid #38bdf8; border-radius: 10px; padding: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 4. DATA ENGINE ---
+# --- 4. DATA ENGINE (CORRETTO PER I PUNTINI) ---
 @st.cache_data
-def load_secure_data():
+def load_data_blindato():
     try:
         df = pd.read_excel("Avvistamenti.xlsx")
-        df.columns = df.columns.str.strip().str.lower()
-        # Mapping flessibile
-        m = {'specie avvistata': 'specie', 'n_esemplari': 'count', 'latitudine': 'lat', 'longitudine': 'lon'}
-        df = df.rename(columns=m)
-        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-        df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-        return df.dropna(subset=['lat', 'lon'])
+        # Pulizia nomi colonne
+        df.columns = df.columns.str.strip()
+        
+        # TROVA LATITUDINE E LONGITUDINE (Qualsiasi nome abbiano)
+        lat_c = next((c for c in df.columns if c.lower() in ['lat', 'latitudine', 'latitude']), None)
+        lon_c = next((c for c in df.columns if c.lower() in ['lon', 'longitudine', 'longitude']), None)
+        specie_c = next((c for c in df.columns if c.lower() in ['specie', 'species']), 'specie')
+        count_c = next((c for c in df.columns if c.lower() in ['n_esemplari', 'count', 'numero']), None)
+
+        if lat_c and lon_c:
+            # Forza la conversione a numero (se ci sono virgole o testi, li pulisce)
+            df[lat_c] = pd.to_numeric(df[lat_c], errors='coerce')
+            df[lon_c] = pd.to_numeric(df[lon_c], errors='coerce')
+            # Rinomina per il codice interno
+            df = df.rename(columns={lat_c: 'lat', lon_c: 'lon', specie_c: 'specie'})
+            if count_c: df = df.rename(columns={count_c: 'count'})
+            
+            # ELIMINA RIGHE SENZA COORDINATE (Cruciale per i puntini!)
+            df = df.dropna(subset=['lat', 'lon'])
+            return df
+        return None
     except Exception as e:
-        st.error(f"DATABASE OFFLINE: {e}")
+        st.error(f"Errore caricamento: {e}")
         return None
 
-df = load_secure_data()
+df = load_data_blindato()
 
 if df is not None:
-    # --- SIDEBAR CONTROL ---
+    # --- SIDEBAR ---
     with st.sidebar:
-        st.title("🛰️ MISSION CONTROL")
-        st.code(f"USER: AUTHORIZED\nSYNC: {datetime.now().strftime('%H:%M:%S')}\nSTATUS: ENCRYPTED", language="bash")
-        st.markdown("---")
-        map_style = st.selectbox("SENSORS MODE", ["Satellite Hybrid", "Deep Sea Terrain", "Dark Ops"])
-        specie_sel = st.multiselect("TARGET SPECIE", df['specie'].unique(), default=df['specie'].unique())
+        st.title("🛰️ CONTROLLI")
+        map_style = st.selectbox("MAPPA", ["Satellite Ibrido", "Mappa Stradale", "Terreno"])
+        specie_sel = st.multiselect("FILTRA SPECIE", df['specie'].unique(), default=df['specie'].unique())
         df_f = df[df['specie'].isin(specie_sel)]
         if st.button("🔴 LOGOUT"):
             st.session_state["authenticated"] = False
             st.rerun()
 
-    # --- MAIN DASHBOARD ---
+    # --- DASHBOARD ---
     st.title("Gordazzoni Institute Research")
-    st.markdown("### *Restricted Research Environment - Level 5 Clearance*")
+    
+    # KPI
+    c1, c2, c3 = st.columns(3)
+    c1.metric("AVVISTAMENTI", len(df_f))
+    c2.metric("ESEMPLARI", int(df_f['count'].sum()) if 'count' in df_f.columns else "N/D")
+    c3.metric("AREA", "MEDITERRANEO SETT.")
 
-    # Metrics
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("TRACKS", len(df_f))
-    m2.metric("TOTAL SPECIMENS", int(df_f['count'].sum()) if 'count' in df_f.columns else "N/A")
-    m3.metric("SEA TEMP AVG", f"{df_f['temperatura_acqua'].mean():.1f}°C")
-    m4.metric("MAX DEPTH", f"{int(df_f['profondita_mare'].max())}m")
+    # --- MAPPA (CORRETTA) ---
+    st.subheader("📍 Geoposizionamento Asset")
+    
+    styles = {"Satellite Ibrido": "white-bg", "Mappa Stradale": "open-street-map", "Terreno": "stamen-terrain"}
+    
+    # Creazione figura con i PUNTINI (Scatter Mapbox)
+    fig = px.scatter_mapbox(
+        df_f, 
+        lat="lat", 
+        lon="lon", 
+        color="specie",
+        size="count" if "count" in df_f.columns else None,
+        hover_name="specie",
+        hover_data=list(df_f.columns),
+        zoom=5, 
+        height=700,
+        mapbox_style=styles[map_style]
+    )
 
-    # --- TABS ---
-    t1, t2, t3 = st.tabs(["🌎 GEOSPATIAL RADAR", "📊 ANALYTICS", "💾 ENCRYPTED DATA"])
+    # Layer Satellitare (Se selezionato)
+    if map_style == "Satellite Ibrido":
+        fig.update_layout(mapbox_layers=[{
+            "below": 'traces', "sourcetype": "raster",
+            "source": ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
+        }])
 
-    with t1:
-        st.subheader("Rilevamento Satellitare in Tempo Reale")
-        st_map = {"Satellite Hybrid": "white-bg", "Deep Sea Terrain": "stamen-terrain", "Dark Ops": "carto-darkmatter"}
-        
-        fig_map = px.scatter_mapbox(df_f, lat="lat", lon="lon", color="specie", 
-                                  size="count" if "count" in df_f.columns else None,
-                                  hover_name="specie", zoom=6, height=700,
-                                  mapbox_style=st_map[map_style], color_discrete_sequence=px.colors.qualitative.Prism)
-        
-        if map_style == "Satellite Hybrid":
-            fig_map.update_layout(mapbox_layers=[{
-                "sourcetype": "raster",
-                "source": ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
-            }])
-        
-        fig_map.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, paper_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig_map, use_container_width=True)
+    fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, paper_bgcolor="rgba(0,0,0,0)")
+    st.plotly_chart(fig, use_container_width=True)
 
-    with t2:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("Gerarchia Biologica")
-            st.plotly_chart(px.sunburst(df_f, path=['specie', 'comportamento'], template="plotly_dark"), use_container_width=True)
-        with c2:
-            st.subheader("Correlazione Ambiente")
-            fig_env = px.scatter(df_f, x="temperatura_acqua", y="profondita_mare", color="specie", template="plotly_dark")
-            fig_env.update_yaxes(autorange="reversed")
-            st.plotly_chart(fig_env, use_container_width=True)
-
-    with t3:
-        st.subheader("Ispezione Dati Protetti")
+    # Database
+    with st.expander("Ispezione Dati"):
         st.dataframe(df_f, use_container_width=True)
-        st.download_button("📥 EXPORT ENCRYPTED CSV", df_f.to_csv(index=False).encode('utf-8'), "gordazzoni_secret.csv", "text/csv")
+else:
+    st.error("Impossibile generare la mappa. Controlla che nel file Excel ci siano colonne chiamate 'lat' e 'lon' con dei numeri.")
